@@ -1,0 +1,106 @@
+/* Hand-drawn arrows as inline SVGs */
+.hand-arrow {
+  position: absolute;
+  width: 100px;
+  height: 50px;
+  pointer-events: none;
+}
+
+.hand-arrow path {
+  stroke: var(--red);
+  stroke-width: 1.5;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.hand-arrow polygon {
+  fill: var(--red);
+}
+
+/* Desktop positioning - notes around the card */
+@media (min-width: 901px) {
+  .handwritten-notes {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    pointer-events: none;
+    z-index: 10;
+  }
+
+  .hand-note {
+    position: absolute;
+    pointer-events: auto;
+    max-width: 220px;
+  }
+
+  /* Note 1: Pick a fixture -> Card header (top-left) */
+  .hand-note-1 {
+    top: 60px;
+    left: -260px;
+  }
+  .hand-note-1 .hand-arrow {
+    left: 100%;
+    top: 50%;
+    transform: translateY(-50%);
+  }
+
+  /* Note 2: Read the lineups -> Teamsheet (left-middle) */
+  .hand-note-2 {
+    top: 240px;
+    left: -260px;
+  }
+  .hand-note-2 .hand-arrow {
+    left: 100%;
+    top: 50%;
+    transform: translateY(-50%);
+  }
+
+  /* Note 3: Weigh the form -> Form guide (bottom-left) */
+  .hand-note-3 {
+    bottom: 180px;
+    left: -260px;
+  }
+  .hand-note-3 .hand-arrow {
+    left: 100%;
+    top: 50%;
+    transform: translateY(-50%);
+  }
+
+  /* Note 4: Make your calls -> Predictions (bottom-right) */
+  .hand-note-4 {
+    bottom: 180px;
+    right: -260px;
+  }
+  .hand-note-4 .hand-arrow {
+    right: 100%;
+    top: 50%;
+    transform: translateY(-50%) rotate(180deg);
+  }
+
+  /* Note 5: Seal it -> SEALED stamp (top-right) */
+  .hand-note-5 {
+    top: 60px;
+    right: -260px;
+  }
+  .hand-note-5 .hand-arrow {
+    right: 100%;
+    top: 50%;
+    transform: translateY(-50%) rotate(180deg);
+  }
+
+  /* Note 6: Track your career -> Ticket stub (bottom, center) */
+  .hand-note-6 {
+    bottom: -90px;
+    left: 50%;
+    transform: translateX(-50%);
+    text-align: center;
+  }
+  .hand-note-6 .hand-arrow {
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%) rotate(-90deg);
+  }
+}

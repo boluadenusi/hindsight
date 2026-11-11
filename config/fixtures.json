@@ -1,0 +1,38 @@
+{
+  "topFiveLeagues": [
+    { "id": 30, "name": "premier-league", "displayName": "Premier League", "country": "England" },
+    { "id": 24, "name": "laliga", "displayName": "La Liga", "country": "Spain" },
+    { "id": 37, "name": "bundesliga", "displayName": "Bundesliga", "country": "Germany" },
+    { "id": 34, "name": "serie-a", "displayName": "Serie A", "country": "Italy" },
+    { "id": 28, "name": "ligue-1", "displayName": "Ligue 1", "country": "France" }
+  ],
+  "tierPercentages": {
+    "A": 45,
+    "B": 40,
+    "C": 15
+  },
+  "bigClubs": [
+    { "id": 790, "name": "Manchester United", "league": "Premier League" },
+    { "id": 334, "name": "Manchester City", "league": "Premier League" },
+    { "id": 369, "name": "Liverpool FC", "league": "Premier League" },
+    { "id": 51,  "name": "Arsenal FC", "league": "Premier League" },
+    { "id": 624, "name": "Chelsea FC", "league": "Premier League" },
+    { "id": 155, "name": "Tottenham Hotspur", "league": "Premier League" },
+    { "id": 498, "name": "Real Madrid", "league": "La Liga" },
+    { "id": 119, "name": "FC Barcelona", "league": "La Liga" },
+    { "id": 115, "name": "Atlético de Madrid", "league": "La Liga" },
+    { "id": 314, "name": "Bayern Munich", "league": "Bundesliga" },
+    { "id": 168, "name": "Borussia Dortmund", "league": "Bundesliga" },
+    { "id": 157, "name": "Bayer 04 Leverkusen", "league": "Bundesliga" },
+    { "id": 263, "name": "RB Leipzig", "league": "Bundesliga" },
+    { "id": 554, "name": "Juventus FC", "league": "Serie A" },
+    { "id": 526, "name": "Inter Milan", "league": "Serie A" },
+    { "id": 549, "name": "AC Milan", "league": "Serie A" },
+    { "id": 88,  "name": "AS Roma", "league": "Serie A" },
+    { "id": 618, "name": "SSC Napoli", "league": "Serie A" },
+    { "id": 592, "name": "Paris Saint-Germain", "league": "Ligue 1" },
+    { "id": 279, "name": "Olympique Marseille", "league": "Ligue 1" },
+    { "id": 20,  "name": "Olympique Lyon", "league": "Ligue 1" },
+    { "id": 169, "name": "AS Monaco", "league": "Ligue 1" }
+  ]
+}

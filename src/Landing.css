@@ -1,0 +1,108 @@
+/* ==========================================================================
+   Landing — "Old-school matchday. Zero noise." enamel ground-rules sign
+   ========================================================================== */
+
+.rules-sign {
+  --sign-cream: #f1e9d4;
+  position: relative;
+  padding: 16px;
+  background: var(--green);
+  border-radius: 5px;
+  box-shadow:
+    0 10px 30px #22382b26,
+    inset 0 1px 0 #ffffff1a;
+}
+
+/* Thin cream double border inside the edge */
+.rules-sign-inner {
+  position: relative;
+  padding: clamp(22px, 4vw, 42px);
+  border: 1px solid var(--sign-cream);
+  border-radius: 3px;
+  box-shadow:
+    inset 0 0 0 4px var(--green),
+    inset 0 0 0 5px var(--sign-cream);
+}
+
+/* A small round rivet in each corner */
+.rules-rivet {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #f7f1e0, #a99e7c 75%);
+  box-shadow:
+    0 0 0 1px #20352a,
+    inset 0 0 2px #6f6851;
+}
+.rules-rivet-tl { top: 7px; left: 7px; }
+.rules-rivet-tr { top: 7px; right: 7px; }
+.rules-rivet-bl { bottom: 7px; left: 7px; }
+.rules-rivet-br { bottom: 7px; right: 7px; }
+
+/* Label + heading, centred at the top of the board */
+.rules-sign-head {
+  margin-bottom: clamp(20px, 3.5vw, 34px);
+  text-align: center;
+}
+.rules-sign-label {
+  margin: 0 0 8px;
+  color: #f1e9d4b8;
+  font: 600 10px 'DM Mono', monospace;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+}
+.rules-sign-head h2 {
+  margin: 0;
+  color: var(--sign-cream);
+  font: 600 clamp(24px, 4.5vw, 34px) 'Playfair Display', Georgia, serif;
+  letter-spacing: -.6px;
+  text-wrap: balance;
+}
+
+/* 2x2 grid with thin cream dividers between the cells */
+.rules-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+.rules-cell {
+  padding: clamp(18px, 3vw, 30px);
+  border-right: 1px solid #f1e9d44d;
+  border-bottom: 1px solid #f1e9d44d;
+}
+.rules-cell:nth-child(even) { border-right: 0; }
+.rules-cell:nth-child(n + 3) { border-bottom: 0; }
+
+/* Number plate: small cream square, green serif number */
+.rules-number {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  margin-bottom: 14px;
+  background: var(--sign-cream);
+  color: var(--green);
+  border-radius: 3px;
+  font: 700 17px/1 'Playfair Display', Georgia, serif;
+}
+
+.rules-cell h4 {
+  margin: 0 0 8px;
+  color: var(--sign-cream);
+  font: 700 15px 'DM Sans', sans-serif;
+}
+.rules-cell p {
+  margin: 0;
+  color: #ece3cdc4;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+/* Mobile: stack the four in one column */
+@media (max-width: 640px) {
+  .rules-sign { padding: 10px; }
+  .rules-grid { grid-template-columns: 1fr; }
+  .rules-cell { border-right: 0; }
+  .rules-cell:nth-child(n + 3) { border-bottom: 1px solid #f1e9d44d; }
+  .rules-cell:last-child { border-bottom: 0; }
+}
