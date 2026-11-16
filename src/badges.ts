@@ -302,6 +302,76 @@ export function evaluateEarnedBadges(history: BadgeHistoryItem[]): BadgeId[] {
   return BADGES.map((badge) => badge.id).filter((id) => earned.has(id));
 }
 
+// The absolute (non-relative) badges a single completed fixture qualifies for.
+// Used by the Record Book to ink the stamps that belong to each match without
+// re-inking the whole book. Relative badges (deep-cut, hot-hand, comeback-kid,
+// no-hints-needed, time-traveller, derby-day) are archive-wide by nature and are
+// intentionally left out — they belong on the summary, not on one fixture.
+export function badgesForItem(item: BadgeHistoryItem): BadgeId[] {
+  const evaluation = item.evaluation;
+  if (!evaluation || typeof evaluation.percentage !== 'number') return [];
+
+  const picks = evaluation.goalscorerPoints || [];
+  const firstGoalscorerDetail = evaluation.firstGoalscorerDetail;
+  const earned = new Set<BadgeId>();
+
+  if (evaluation.exactScoreline) earned.add('bullseye');
+  if (evaluation.exactScoreline && evaluation.correctResult
+    && item.result?.homeGoals === item.result?.awayGoals) {
+    earned.add('on-the-nose');
+  }
+  if (firstGoalscorerDetail
+    && firstGoalscorerDetail.points > 0
+    && typeof firstGoalscorerDetail.predicted === 'number'
+    && typeof firstGoalscorerDetail.actual === 'number') {
+    earned.add('sharpshooter');
+  }
+  const firstTeamCall = evaluation.calls?.find((call) => call.id === 'firstTeamToScore');
+  if (firstTeamCall?.status === 'earned'
+    && firstGoalscorerDetail
+    && firstGoalscorerDetail.points > 0
+    && typeof firstGoalscorerDetail.predicted === 'number'
+    && typeof firstGoalscorerDetail.actual === 'number') {
+    earned.add('first-in-line');
+  }
+  if (picks.some((pick) => (pick.actual ?? 0) >= 2 && (pick.matched ?? 0) >= 2)) earned.add('brace-yourself');
+  if (picks.some((pick) => (pick.actual ?? 0) >= 3 && (pick.matched ?? 0) >= 3)) earned.add('hat-trick-hero');
+  const substituteIds = new Set([
+    ...(item.fixtureSnapshot?.home_subs || []),
+    ...(item.fixtureSnapshot?.away_subs || []),
+  ].map((player) => player.id));
+  if (picks.some((pick) => substituteIds.has(pick.playerId) && (pick.matched ?? 0) > 0)) {
+    earned.add('super-sub');
+  }
+  const correctlyPredictedScorers = new Set(
+    picks.filter((pick) => (pick.matched ?? 0) > 0).map((pick) => pick.playerId),
+  );
+  if (correctlyPredictedScorers.size >= 3) earned.add('golden-boot-scout');
+  const predictedScoringTeams = new Set(
+    (item.result?.goals || [])
+      .filter((goal) => !goal.ownGoal && goal.playerId !== null && correctlyPredictedScorers.has(goal.playerId))
+      .map((goal) => goal.team),
+  );
+  if (predictedScoringTeams.has('home') && predictedScoringTeams.has('away')) earned.add('both-ends');
+  if (evaluation.correctResult && evaluation.exactScoreline
+    && picks.some((pick) => (pick.matched ?? 0) > 0)) {
+    earned.add('clean-sweep');
+  }
+  if ((evaluation.percentage ?? 0) >= FLAWLESS_THRESHOLD) earned.add('flawless-read');
+  const perfectAnswerableCalls = typeof evaluation.maximum === 'number'
+    && evaluation.maximum > 0
+    && typeof evaluation.earned === 'number'
+    && evaluation.earned === evaluation.maximum;
+  if (perfectAnswerableCalls && (evaluation.hintsUsed || item.hintsUsed || []).length === 0) {
+    earned.add('perfect-memory');
+  }
+  if (perfectAnswerableCalls && (evaluation.hintsUsed || item.hintsUsed || []).length > 0) {
+    earned.add('perfect-with-hint');
+  }
+
+  return BADGES.map((badge) => badge.id).filter((id) => earned.has(id));
+}
+
 // Merge newly evaluated badges into the stored set. Returns the ids that were
 // not previously stored (i.e. the stamps to announce).
 export function syncEarnedBadges(history: BadgeHistoryItem[]): BadgeId[] {

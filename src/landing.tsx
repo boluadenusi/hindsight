@@ -1,9 +1,14 @@
 ﻿import { useEffect, useRef, useState } from 'react';
 import { calculateCareerStats } from './memoryScore';
+import type { DrawPreference } from './drawPreference';
 import './Landing.css';
 
 type LandingPageProps = {
   onPlay: () => void;
+  onDrawNew: () => void;
+  drawPreference: DrawPreference;
+  onDrawPreferenceChange: (preference: DrawPreference) => void;
+  preferenceError: string;
 };
 
 type SavedPrediction = {
@@ -79,7 +84,10 @@ function matchFormColor(score: number): string {
   return `hsl(${hue} 68% 42%)`;
 }
 
-export function LandingPage({ onPlay }: LandingPageProps) {
+export function LandingPage({ onPlay, onDrawNew, drawPreference, onDrawPreferenceChange, preferenceError }: LandingPageProps) {
+  const [clubs, setClubs] = useState<{ id: number; name: string }[] | null>(null);
+  const [clubsError, setClubsError] = useState('');
+  const [clubsRetry, setClubsRetry] = useState(0);
   const [warmup, setWarmup] = useState<WarmupQuestion | null>(null);
   const [warmupAnswer, setWarmupAnswer] = useState<WarmupAnswer | null>(null);
   const [warmupLoading, setWarmupLoading] = useState(true);
@@ -92,6 +100,26 @@ export function LandingPage({ onPlay }: LandingPageProps) {
   const history = readHistory();
   const stats = calculateCareerStats(history);
   const isReturningPlayer = stats.totalPlayed > 0;
+  let hasActiveFixture = false;
+  try { hasActiveFixture = localStorage.getItem('hindsight.activeFixture') !== null; } catch { /* Storage is optional. */ }
+  const needsClub = drawPreference.mode === 'supporter' && drawPreference.clubId === null;
+  const canResume = hasActiveFixture || !!history.at(-1)?.fixtureSnapshot;
+  const cannotStart = needsClub && !canResume;
+
+  useEffect(() => {
+    if (drawPreference.mode !== 'supporter' || clubs !== null) return;
+    const controller = new AbortController();
+    setClubsError('');
+    fetch('/api/clubs', { signal: controller.signal })
+      .then(async (response) => {
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.message || 'Could not load clubs.');
+        return payload as { id: number; name: string }[];
+      })
+      .then(setClubs)
+      .catch((cause: Error) => { if (cause.name !== 'AbortError') setClubsError(cause.message); });
+    return () => controller.abort();
+  }, [drawPreference.mode, clubs, clubsRetry]);
 
   // The most recent completed match with a saved snapshot. Locked-but-unrevealed
   // fixtures are skipped so the stub always describes a match that actually finished.
@@ -180,13 +208,14 @@ export function LandingPage({ onPlay }: LandingPageProps) {
         </div>
         <nav className="landing-nav" aria-label="Main Navigation">
           <a href="/how-to-play" className="nav-link">How to Play</a>
+          <a href="/record-book" className="nav-link record-book-nav-link">Record Book</a>
           <a href="#features" className="nav-link">The Archive</a>
           {isReturningPlayer && (
             <span className="nav-career-badge">
               {stats.totalPlayed} {stats.totalPlayed === 1 ? 'Match' : 'Matches'} · {stats.runningAverage.toFixed(1)}%
             </span>
           )}
-          <button type="button" className="nav-play-button" onClick={onPlay}>
+          <button type="button" className="nav-play-button" onClick={onPlay} disabled={cannotStart}>
             {isReturningPlayer ? 'Resume Season →' : 'Kick Off →'}
           </button>
         </nav>
@@ -202,8 +231,29 @@ export function LandingPage({ onPlay }: LandingPageProps) {
            Everyone says they knew it all along. This checks if you really did.
           </p>
 
+          <section className="draw-settings" aria-labelledby="draw-settings-title">
+            <h2 id="draw-settings-title">Choose your draw</h2>
+            <p>Both modes count toward the same career record. Your choice applies to the next fixture.</p>
+            <fieldset className="draw-modes">
+              <legend>Match selection</legend>
+              <label className="draw-mode"><input type="radio" name="draw-mode" checked={drawPreference.mode === 'free'} onChange={() => onDrawPreferenceChange({ mode: 'free', clubId: drawPreference.clubId })} /><span><strong>Free for all</strong><small>Any eligible match in the archive</small></span></label>
+              <label className="draw-mode"><input type="radio" name="draw-mode" checked={drawPreference.mode === 'supporter'} onChange={() => onDrawPreferenceChange({ mode: 'supporter', clubId: drawPreference.clubId })} /><span><strong>Supporter</strong><small>Only matches involving your club</small></span></label>
+            </fieldset>
+            {drawPreference.mode === 'supporter' && <div className="draw-club">
+              <label htmlFor="supporter-club">Your club</label>
+              <select id="supporter-club" value={drawPreference.clubId ?? ''} disabled={clubs === null} onChange={(event) => onDrawPreferenceChange({ mode: 'supporter', clubId: event.target.value ? Number(event.target.value) : null })}>
+                <option value="">{clubs === null ? 'Loading clubs…' : 'Choose a club'}</option>
+                {clubs?.map((club) => <option value={club.id} key={club.id}>{club.name}</option>)}
+              </select>
+              {clubsError && <p className="form-error" role="alert">{clubsError} <button type="button" onClick={() => setClubsRetry((count) => count + 1)}>Try again</button></p>}
+              {clubs && clubs.length === 0 && <p className="form-error" role="status">No clubs have eligible fixtures in the archive.</p>}
+            </div>}
+            {preferenceError && <p className="form-error" role="status">{preferenceError}</p>}
+            {needsClub && <p role="status">Choose a club before drawing a supporter fixture.</p>}
+          </section>
+
           <div className="hero-actions">
-            <button type="button" className="hero-cta-button" onClick={onPlay}>
+            <button type="button" className="hero-cta-button" onClick={onPlay} disabled={cannotStart}>
               <svg className="cta-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <circle cx="12" cy="12" r="9" />
                 <path d="M12 7.2l3.4 2.5-1.3 4h-4.2l-1.3-4L12 7.2z" />
@@ -214,6 +264,10 @@ export function LandingPage({ onPlay }: LandingPageProps) {
               </span>
               <span className="cta-arrow" aria-hidden="true">→</span>
             </button>
+            {hasActiveFixture && <>
+              <button type="button" className="draw-new-button" onClick={onDrawNew} disabled={needsClub}>Draw a new fixture</button>
+              <p className="draw-replace-note">This replaces your current fixture and clears any unlocked calls. Resume to keep it.</p>
+            </>}
           </div>
         </div>
 
@@ -265,7 +319,7 @@ export function LandingPage({ onPlay }: LandingPageProps) {
                   )}
                 </div>
                 <div className="ticket-footer">
-                  <button type="button" className="ticket-play-link" onClick={onPlay}>
+                  <button type="button" className="ticket-play-link" onClick={onPlay} disabled={cannotStart}>
                     KICK OFF→
                   </button>
                 </div>

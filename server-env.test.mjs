@@ -11,6 +11,8 @@ async function runServer(t, { file, databaseUrl }) {
   const dir = mkdtempSync(path.join(root, '.server-env-test-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   cpSync(path.join(root, 'server.mjs'), path.join(dir, 'server.mjs'));
+  cpSync(path.join(root, 'stats.mjs'), path.join(dir, 'stats.mjs'));
+  cpSync(path.join(root, 'fixtureDraw.mjs'), path.join(dir, 'fixtureDraw.mjs'));
   cpSync(path.join(root, 'warmupQuestions.mjs'), path.join(dir, 'warmupQuestions.mjs'));
   cpSync(path.join(root, 'config'), path.join(dir, 'config'), { recursive: true });
   if (file !== undefined) writeFileSync(path.join(dir, '.env'), file);

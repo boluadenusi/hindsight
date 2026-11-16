@@ -18,6 +18,8 @@ import { BadgeStamp } from './BadgeStamp';
 import { computeWinPercentages } from './matchOdds';
 import { CaughtYouToast } from './CaughtYouToast';
 import { pickCaughtYouMessage } from './caughtYou';
+import { logStatsEvent } from './stats';
+import { readDrawPreference, type DrawPreference } from './drawPreference';
 
 type Player = { id: number; name: string; position: string | null; shirtNumber: string | null };
 type FormMatch = {
@@ -80,7 +82,6 @@ function HintIcon({ kind }: { kind: HintKind }) {
 const PLAYED_KEY = 'hindsight.playedFixtureIds';
 const HISTORY_KEY = 'hindsight.predictions';
 const ACTIVE_KEY = 'hindsight.activeFixture';
-
 function getPlayedIds(): number[] {
   try {
     const parsed = JSON.parse(localStorage.getItem(PLAYED_KEY) || '[]');
@@ -89,16 +90,6 @@ function getPlayedIds(): number[] {
     const historyIds = Array.isArray(history) ? history.map((item) => item?.fixtureId).filter((id): id is number => Number.isInteger(id)) : [];
     return [...new Set([...legacyIds, ...historyIds])];
   } catch { return []; }
-}
-
-function getPlayerId(): string {
-  const key = 'hindsight.playerId';
-  let id = localStorage.getItem(key);
-  if (!id) {
-    id = crypto.randomUUID();
-    localStorage.setItem(key, id);
-  }
-  return id;
 }
 
 function countPredictedGoals(ids: number[], playerId: number) {
@@ -389,7 +380,7 @@ function WinOdds({ fixture }: { fixture: Fixture }) {
   );
 }
 
-export function Matchday({ onHome }: { onHome?: () => void } = {}) {
+export function Matchday({ onHome, drawPreference = readDrawPreference(localStorage), startFresh = false }: { onHome?: () => void; drawPreference?: DrawPreference; startFresh?: boolean } = {}) {
   const [fixture, setFixture] = useState<Fixture | null>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
@@ -405,6 +396,7 @@ export function Matchday({ onHome }: { onHome?: () => void } = {}) {
   const [hintsUsed, setHintsUsed] = useState<HintKind[]>([]);
   const [hintData, setHintData] = useState<{ goalCount?: number; spotlight?: number | null; spotlightName?: string; firstTeam?: FirstTeam | null }>({});
   const [hintError, setHintError] = useState('');
+  const [hintsPending, setHintsPending] = useState(0);
 
   const [lockedPrediction, setLockedPrediction] = useState<Prediction | null>(null);
   const [formError, setFormError] = useState('');
@@ -483,15 +475,9 @@ export function Matchday({ onHome }: { onHome?: () => void } = {}) {
 
   useEffect(() => {
     const controller = new AbortController();
-    try { getPlayerId(); } catch {
-      setError('Browser storage is unavailable. Enable local storage to save your match history.');
-      setLoading(false);
-      return () => controller.abort();
-    }
-
     try {
       const activeRaw = localStorage.getItem(ACTIVE_KEY);
-      if (activeRaw) {
+      if (activeRaw && !startFresh) {
         const active = JSON.parse(activeRaw) as Fixture;
         const currentHist = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]') as Prediction[];
         const existing = currentHist.find((p) => p.fixtureId === active.id);
@@ -504,7 +490,7 @@ export function Matchday({ onHome }: { onHome?: () => void } = {}) {
 
       const currentHist = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]') as Prediction[];
       const latest = currentHist.at(-1);
-        if (latest?.fixtureSnapshot) {
+        if (latest?.fixtureSnapshot && (!startFresh || !latest.result)) {
         setFixture(latest.fixtureSnapshot);
         setLockedPrediction(latest);
         setHomeScore(latest.homeScore == null ? '' : String(latest.homeScore));
@@ -526,10 +512,16 @@ export function Matchday({ onHome }: { onHome?: () => void } = {}) {
       }
     } catch { /* A corrupt history can't block a fresh fixture. */ }
 
+    if (drawPreference.mode === 'supporter' && drawPreference.clubId === null) {
+      setError('Choose a club to draw a supporter fixture.');
+      setLoading(false);
+      return () => controller.abort();
+    }
+
     fetch('/api/fixtures/next', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ playedFixtureIds: getPlayedIds() }),
+      body: JSON.stringify({ playedFixtureIds: getPlayedIds(), clubId: drawPreference.mode === 'supporter' ? drawPreference.clubId : null }),
       signal: controller.signal,
     })
       .then(async (response) => {
@@ -539,10 +531,11 @@ export function Matchday({ onHome }: { onHome?: () => void } = {}) {
       })
       .then((loadedFixture) => {
         setFixture(loadedFixture);
+        logStatsEvent('fixture', loadedFixture);
         try { localStorage.setItem(ACTIVE_KEY, JSON.stringify(loadedFixture)); } catch { /* ignore */ }
       })
       .catch((cause: Error) => { if (cause.name !== 'AbortError') setError(cause.message); })
-      .finally(() => setLoading(false));
+      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
 
     return () => controller.abort();
   }, []);
@@ -605,7 +598,8 @@ export function Matchday({ onHome }: { onHome?: () => void } = {}) {
   }
 
   async function requestHint(kind: HintKind) {
-    if (!fixture || lockedPrediction || hintsUsed.includes(kind)) return;
+    if (!fixture || lockedPrediction || loadingNext || hintsUsed.includes(kind)) return;
+    setHintsPending((count) => count + 1);
     setHintError('');
     try {
       const endpoint = kind === 'goalCount' ? 'goal-count' : kind === 'spotlight' ? 'spotlight' : 'first-team';
@@ -614,6 +608,7 @@ export function Matchday({ onHome }: { onHome?: () => void } = {}) {
       if (!response.ok || !data) {
         throw new Error(data?.message || 'The hint is unavailable right now.');
       }
+      logStatsEvent('hint', fixture);
       if (kind === 'goalCount') {
         setHintsUsed((current) => [...current, 'goalCount']);
         setHintData((current) => ({ ...current, goalCount: data.totalGoals }));
@@ -630,11 +625,13 @@ export function Matchday({ onHome }: { onHome?: () => void } = {}) {
       }
     } catch (cause) {
       setHintError(cause instanceof Error ? cause.message : 'The hint is unavailable right now.');
+    } finally {
+      setHintsPending((count) => count - 1);
     }
   }
 
   function lockPredictions() {
-    if (!fixture || lockedPrediction || saving) return;
+    if (!fixture || lockedPrediction || saving || loadingNext || hintsPending > 0) return;
     if ((homeScore === '') !== (awayScore === '')) {
       setFormError("Enter both teams' goals, or leave both blank to skip the scoreline.");
       return;
@@ -691,6 +688,7 @@ export function Matchday({ onHome }: { onHome?: () => void } = {}) {
       localStorage.removeItem(ACTIVE_KEY);
       setHistory(updated);
       setLockedPrediction(prediction);
+      logStatsEvent('lock', fixture);
       // Sealing is the reveal action: fetch the archived result and show it
       // as soon as the prediction has been safely saved.
       void revealMatch(prediction);
@@ -716,7 +714,10 @@ export function Matchday({ onHome }: { onHome?: () => void } = {}) {
       const updatedHistory = currentHistory.map((item) => item.fixtureId === fixture.id ? { ...item, result: actual, evaluation: score } : item);
       localStorage.setItem(HISTORY_KEY, JSON.stringify(updatedHistory));
       setHistory(updatedHistory);
-      setNewBadges(syncEarnedBadges(updatedHistory));
+      const earnedBadges = syncEarnedBadges(updatedHistory);
+      setNewBadges(earnedBadges);
+      logStatsEvent('reveal', fixture, score.percentage);
+      for (const badge of earnedBadges) logStatsEvent(`badge:${badge}`, fixture);
       setReveal(actual);
       setEvaluation(score);
       setRevealStep('score');
@@ -726,7 +727,11 @@ export function Matchday({ onHome }: { onHome?: () => void } = {}) {
   }
 
   async function handleNextFixture() {
-    if (loadingNext) return;
+    if (loadingNext || saving || revealing || hintsPending > 0) return;
+    if (drawPreference.mode === 'supporter' && drawPreference.clubId === null) {
+      setNextError('Choose a club before drawing a supporter fixture.');
+      return;
+    }
     setLoadingNext(true);
     setNextError('');
     try {
@@ -734,11 +739,13 @@ export function Matchday({ onHome }: { onHome?: () => void } = {}) {
       const response = await fetch('/api/fixtures/next', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ playedFixtureIds: played }),
+        body: JSON.stringify({ playedFixtureIds: played, clubId: drawPreference.mode === 'supporter' ? drawPreference.clubId : null }),
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.message || 'Could not load the Another one.');
       const nextFixture = payload as Fixture;
+      setError('');
+      logStatsEvent('fixture', nextFixture);
       try { localStorage.setItem(ACTIVE_KEY, JSON.stringify(nextFixture)); } catch { /* ignore */ }
       setFixture(nextFixture);
       setHomeScore('0');
@@ -823,6 +830,7 @@ export function Matchday({ onHome }: { onHome?: () => void } = {}) {
         </a>
         <nav className="masthead-nav" aria-label="Matchday navigation">
           <a href="/how-to-play" className="masthead-nav-link">How to Play</a>
+          <a href="/record-book" className="masthead-nav-link">Record Book</a>
           {onHome && (
             <button type="button" className="masthead-home-button" onClick={onHome} title="Return to turnstiles landing page">
               ← Turnstiles
@@ -1104,7 +1112,7 @@ export function Matchday({ onHome }: { onHome?: () => void } = {}) {
                     type="button"
                     className="hint-button"
                     onClick={() => requestHint('goalCount')}
-                    disabled={lockedPrediction || hintsUsed.includes('goalCount')}
+                    disabled={!!lockedPrediction || loadingNext || hintsUsed.includes('goalCount')}
                   >
                     Use hint (−{HINT_SCORE_PENALTIES.goalCount})
                   </button>
@@ -1134,7 +1142,7 @@ export function Matchday({ onHome }: { onHome?: () => void } = {}) {
                     type="button"
                     className="hint-button"
                     onClick={() => requestHint('spotlight')}
-                    disabled={lockedPrediction || hintsUsed.includes('spotlight')}
+                    disabled={!!lockedPrediction || loadingNext || hintsUsed.includes('spotlight')}
                   >
                     Use hint (−{HINT_SCORE_PENALTIES.spotlight})
                   </button>
@@ -1162,7 +1170,7 @@ export function Matchday({ onHome }: { onHome?: () => void } = {}) {
                     type="button"
                     className="hint-button"
                     onClick={() => requestHint('firstTeam')}
-                    disabled={lockedPrediction || hintsUsed.includes('firstTeam')}
+                    disabled={!!lockedPrediction || loadingNext || hintsUsed.includes('firstTeam')}
                   >
                     Use hint (−{HINT_SCORE_PENALTIES.firstTeam})
                   </button>
@@ -1174,7 +1182,7 @@ export function Matchday({ onHome }: { onHome?: () => void } = {}) {
         </fieldset>
 
         {formError && <p className="form-error" role="alert">{formError}</p>}
-        <button className={`lock-button${saving ? ' loading' : ''}`} type="button" onClick={lockPredictions} aria-busy={saving} aria-disabled={saving}>
+        <button className={`lock-button${saving ? ' loading' : ''}`} type="button" onClick={lockPredictions} aria-busy={saving} aria-disabled={saving || loadingNext || hintsPending > 0}>
           <span className="btn-label">Seal my predictions</span>
           <span className="btn-spinner" aria-hidden="true"></span>
         </button>
@@ -1270,11 +1278,12 @@ export function Matchday({ onHome }: { onHome?: () => void } = {}) {
               </div>
             </div>
             <div className="next-fixture-box">
+              <a href="/record-book" className="record-book-link">View your Record Book →</a>
               <button
                 className="next-fixture-button"
                 type="button"
                 onClick={handleNextFixture}
-                disabled={loadingNext}
+                disabled={loadingNext || (drawPreference.mode === 'supporter' && drawPreference.clubId === null)}
               >
                 {loadingNext ? 'Opening the next programme…' : 'Another one →'}
               </button>
@@ -1290,6 +1299,3 @@ export function Matchday({ onHome }: { onHome?: () => void } = {}) {
     </>}
   </main>;
 }
-
-
-

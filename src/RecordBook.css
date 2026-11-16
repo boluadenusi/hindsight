@@ -1,0 +1,27 @@
+.record-intro{padding-block:48px 32px}
+.record-intro h1{margin:0;font:600 clamp(2.25rem,5vw,3rem)/1.1 'Playfair Display',Georgia,serif;letter-spacing:-.03em}
+.record-intro > p:not(.eyebrow){margin-block:12px 0;color:var(--ink)}
+.record-totals{display:flex;flex-wrap:wrap;gap:12px 24px;margin-block-start:24px;color:var(--ink);font-size:14px}
+.record-totals strong{font:600 24px 'Playfair Display',Georgia,serif}
+.record-controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,160px),1fr));align-items:end;gap:12px;padding:16px;background:var(--paper);border:1px solid var(--line)}
+.record-controls label{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:700}
+.record-controls select,.record-controls button{inline-size:100%;min-inline-size:0;min-block-size:44px;padding:8px;border:1px solid var(--line);background:var(--paper);color:var(--ink);font:inherit}
+.record-controls button{cursor:pointer;border-color:var(--green)}
+.record-controls :is(select,button):focus-visible,.record-empty a:focus-visible{outline:2px solid var(--red);outline-offset:3px}
+.record-controls button:active{transform:scale(.98)}
+@media (hover:hover) and (pointer:fine){.record-controls button:hover{background:color-mix(in oklch,var(--paper),var(--green) 12%)}}
+.record-count{margin-block:24px 12px;color:var(--ink);font-size:14px}
+.record-list{display:flex;flex-direction:column;gap:8px;margin:0;padding:0;list-style:none}
+.record-row{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:16px;background:var(--paper);border:1px solid var(--line)}
+.record-match{display:flex;flex-direction:column;gap:8px;min-inline-size:0;overflow-wrap:break-word}
+.record-match > strong{font:600 18px/1.4 'Playfair Display',Georgia,serif}
+.record-meta{font-size:12px;color:var(--ink)}
+.record-result{color:var(--red);font-variant-numeric:tabular-nums}
+.record-score{display:flex;flex-direction:column;gap:4px;flex:none;text-align:end}
+.record-score strong{font:600 24px 'Playfair Display',Georgia,serif;font-variant-numeric:tabular-nums}
+.record-score span{font-size:12px}
+.record-empty{padding:24px;background:var(--paper);border:1px solid var(--line)}
+.record-empty h2{margin:0;font:600 24px 'Playfair Display',Georgia,serif}
+.record-empty p{margin-block:8px 16px}
+.record-empty a{color:var(--green);font-weight:700}
+@media(max-width:800px){.record-page .masthead-nav{display:flex;gap:12px;margin-left:12px}}

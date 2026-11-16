@@ -4,6 +4,8 @@ import { fileURLToPath } from 'node:url';
 import express from 'express';
 import pg from 'pg';
 import { ensureWarmupQuestions } from './warmupQuestions.mjs';
+import { createStatsRouter, createStatsStore } from './stats.mjs';
+import { addFixtureToClubTiers, selectFixture } from './fixtureDraw.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 let envFile = '';
@@ -24,9 +26,23 @@ const pool = new pg.Pool({
   ssl: process.env.DATABASE_SSL === 'true' ? { rejectUnauthorized: false } : undefined,
   options: `-c search_path=${schema} -c max_parallel_workers_per_gather=0`,
 });
+const statsPool = new pg.Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.DATABASE_SSL === 'true' ? { rejectUnauthorized: false } : undefined,
+  options: `-c search_path=${schema} -c max_parallel_workers_per_gather=0`,
+  max: 2,
+  connectionTimeoutMillis: 2000,
+});
 const app = express();
 app.disable('x-powered-by');
+const stats = createStatsStore(statsPool, schema);
+app.use(createStatsRouter({ password: process.env.STATS_PASSWORD, ...stats }));
 app.use(express.json({ limit: '256kb' }));
+function cleanStats() {
+  void stats.cleanup().catch(() => console.warn('[Stats] Event cleanup failed.'));
+}
+cleanStats();
+setInterval(cleanStats, 6 * 60 * 60 * 1000).unref();
 const production = process.argv.includes('--production') || process.env.NODE_ENV === 'production';
 
 const fixtureConfig = JSON.parse(readFileSync(path.join(root, 'config', 'fixtures.json'), 'utf8'));
@@ -52,7 +68,7 @@ async function getEligibleFixtureTiers() {
 
   // Restrict candidate queries strictly to the top 5 leagues
   const { rows: candidates } = await pool.query(`
-    SELECT g.id, g.home_club_id, g.away_club_id
+    SELECT g.id, g.home_club_id, g.away_club_id, home.name AS home_name, away.name AS away_name
     FROM ${schema}.game g
     JOIN ${schema}.competition competition ON competition.id = g.competition_id
     JOIN ${schema}.club home ON home.id = g.home_club_id
@@ -75,7 +91,7 @@ async function getEligibleFixtureTiers() {
 
   const ids = candidates.map((row) => row.id);
   if (!ids.length) {
-    tierCache = { A: [], B: [], C: [], all: new Set(), unmatched };
+    tierCache = { A: [], B: [], C: [], all: new Set(), clubs: new Map(), clubNames: new Map(), unmatched };
     return tierCache;
   }
 
@@ -113,6 +129,8 @@ async function getEligibleFixtureTiers() {
   }
 
   const tiers = { A: [], B: [], C: [] };
+  const clubs = new Map();
+  const clubNames = new Map();
   for (const candidate of candidates) {
     const game = gameById.get(candidate.id);
     const tally = goalsByGame.get(candidate.id) ?? { total: 0, home: 0, away: 0, named: true };
@@ -123,19 +141,19 @@ async function getEligibleFixtureTiers() {
     if (isComplete) {
       const homeIsBig = bigClubIds.has(candidate.home_club_id);
       const awayIsBig = bigClubIds.has(candidate.away_club_id);
-      if (homeIsBig && awayIsBig) {
-        tiers.A.push(candidate.id);
-      } else if (homeIsBig || awayIsBig) {
-        tiers.B.push(candidate.id);
-      } else {
-        tiers.C.push(candidate.id);
-      }
+      const tier = homeIsBig && awayIsBig ? 'A' : homeIsBig || awayIsBig ? 'B' : 'C';
+      tiers[tier].push(candidate.id);
+      addFixtureToClubTiers(clubs, candidate, tier);
+      clubNames.set(candidate.home_club_id, candidate.home_name);
+      clubNames.set(candidate.away_club_id, candidate.away_name);
     }
   }
 
   tierCache = {
     ...tiers,
     all: new Set([...tiers.A, ...tiers.B, ...tiers.C]),
+    clubs,
+    clubNames,
     unmatched,
   };
   console.log(`[Tier Cache] Ready: Tier A: ${tiers.A.length}, Tier B: ${tiers.B.length}, Tier C: ${tiers.C.length} (Total: ${tierCache.all.size})`);
@@ -175,34 +193,13 @@ async function getTeamForm(clubId, beforeDate) {
 
 // Fixture selection: picks a tier first (A: 45%, B: 40%, C: 15%), then a random fixture inside it,
 // falling back to the next tier if no unplayed fixtures remain in that tier.
-async function getNextFixture(playedIds = []) {
+async function getNextFixture(playedIds = [], clubId = null) {
   const cache = await getEligibleFixtureTiers();
-  const played = new Set(playedIds);
-
-  const { A = 45, B = 40, C = 15 } = fixtureConfig.tierPercentages || {};
-  const totalWeight = A + B + C;
-  const roll = Math.random() * totalWeight;
-  const primaryTier = roll < A ? 'A' : (roll < A + B ? 'B' : 'C');
-
-  const fallbackOrders = {
-    A: ['A', 'B', 'C'],
-    B: ['B', 'A', 'C'],
-    C: ['C', 'B', 'A'],
-  };
-  const searchOrder = fallbackOrders[primaryTier];
-
-  let gameId = null;
-  let assignedTier = null;
-  for (const tier of searchOrder) {
-    const available = cache[tier].filter((id) => !played.has(id));
-    if (available.length > 0) {
-      gameId = available[Math.floor(Math.random() * available.length)];
-      assignedTier = tier;
-      break;
-    }
-  }
-
-  if (!gameId) return null;
+  const tiers = clubId === null ? cache : cache.clubs.get(clubId);
+  if (!tiers) return null;
+  const selection = selectFixture(tiers, playedIds, fixtureConfig.tierPercentages || {});
+  if (!selection) return null;
+  const { gameId, tier: assignedTier } = selection;
 
   const { rows } = await pool.query(`
     SELECT g.id, to_char(g.game_date, 'YYYY-MM-DD') AS game_date, g.home_formation, g.away_formation,
@@ -256,16 +253,34 @@ async function getNextFixture(playedIds = []) {
 
 app.post('/api/fixtures/next', async (req, res) => {
   try {
+    const clubId = req.body?.clubId ?? null;
+    if (clubId !== null && (!Number.isSafeInteger(clubId) || clubId <= 0)) {
+      return res.status(400).json({ message: 'Choose a valid club.' });
+    }
     const playedIds = Array.isArray(req.body?.playedFixtureIds)
       ? req.body.playedFixtureIds.filter((id) => Number.isSafeInteger(id) && id > 0)
       : [];
-    const fixture = await getNextFixture(playedIds);
-    if (!fixture) return res.status(404).json({ message: 'No unused fixtures with complete starting lineups are available in the top five leagues.' });
+    const fixture = await getNextFixture(playedIds, clubId);
+    if (!fixture) return res.status(404).json({ message: clubId === null
+      ? 'No unused fixtures with complete starting lineups are available in the top five leagues.'
+      : 'No unused eligible fixtures are available for this club. Choose another club or free for all.' });
     // Deliberately return pre-match facts only. Result and event fields never leave this server here.
     res.set('Cache-Control', 'no-store').json(fixture);
   } catch (error) {
     console.error('Fixture lookup failed:', error.message);
     res.status(503).json({ message: 'The fixture archive is unavailable right now.' });
+  }
+});
+
+app.get('/api/clubs', async (_req, res) => {
+  try {
+    const cache = await getEligibleFixtureTiers();
+    const clubs = [...cache.clubNames].map(([id, name]) => ({ id, name }));
+    clubs.sort((a, b) => a.name.localeCompare(b.name) || a.id - b.id);
+    res.set('Cache-Control', 'no-store').json(clubs);
+  } catch (error) {
+    console.error('Club lookup failed:', error.message);
+    res.status(503).json({ message: 'The club list is unavailable right now.' });
   }
 });
 

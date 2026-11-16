@@ -9,12 +9,22 @@ Hindsight is a football prediction game built around real historical fixtures. T
 ## Core Loop Status (Version 1)
 
 1. **Landing Page ("Turnstiles" Index)**: Engaging, nostalgic entry page featuring time-travel football premise, vintage matchday turnstile pass with player career stats, interactive matchday warmup teaser, 3-step matchday ritual walkthrough, and purist features grid.
-2. **Fixture Serving & Pre-Match Screen**: Uniform random selection of complete fixtures without repeats. Shows competition, date, clubs, tactical pitch formation diagram, starting elevens, and substitutes bench.
+2. **Fixture Serving & Pre-Match Screen**: Choose free for all or Supporter mode, which draws only matches involving the selected club. Both use the same tier-weighted draw and shared played-fixture history. Shows competition, date, clubs, tactical pitch formation diagram, starting elevens, and substitutes bench.
 3. **Pre-Match Form Guide**: Displays the 5 most recent competitive fixtures for each team strictly prior to the matchday (W/D/L pills, scoreline, venue H/A, opponent, competition, and date).
 4. **Interactive Tactical Pitch Formation**: Chalkboard pitch visual representation mapping starters into their tactical positions and formation rows, supporting direct tap-to-pick goalscorer selection.
 5. **Goalscorer Predictions (Starters & Substitutes Bench)**: Players can pick any starter or substitute from the bench who scored. All predictions are optional and locked atomically.
 6. **Staged Reveal & Scoring**: Final whistle scoreline drops first, followed by goalscorers with recorded minutes, clubs, points breakdown, and percentage of maximum possible points earned.
 7. **Running Average & Next Fixture**: Running average calculated across all played fixtures, comparative performance banner (`Above your average`, `Below your average`, etc.), career ticker in masthead, and "Next fixture →" button.
+
+---
+
+## Fixture draw modes
+
+Choose a draw mode on the home page. Free for all draws from all eligible fixtures in the top five leagues. Supporter mode draws only eligible home or away fixtures involving the selected club; the club list contains clubs with at least one eligible fixture. The preference is saved in the browser and applies to the next draw, not the current fixture. Resume to keep an existing programme, or choose to draw a new fixture on the home page, replacing it and clearing any unlocked calls.
+
+Both modes roll Tier A, B and C with the configured 45/40/15 weights. If the drawn tier has no unplayed eligible fixtures, the existing fallback order selects another available tier within the chosen pool. Since each club necessarily has an empty tier, actual Supporter mode tier frequencies can differ from 45/40/15. Exhausting a club's fixtures does not silently switch to another club or mode. Played fixtures, career scores, and badges are shared across modes.
+
+The Record Book at `/record-book` lists completed matches saved in this browser. Filter by club, competition, season, or memory score and sort the results. Older records with missing match details or scores remain visible with those fields marked unavailable; a locked but unrevealed fixture is not listed as completed.
 
 ---
 
@@ -208,7 +218,7 @@ Implemented in `calculateCareerStats()`:
 
 Hindsight v1 requires no login accounts. Player progress and history are managed in browser `localStorage`:
 
-- `hindsight.playerId`: UUID uniquely identifying the player's browser session.
+- `hindsight.playerId`: Random UUID identifying this browser across visits.
 - `hindsight.predictions`: Ordered array of prediction snapshots, locks, revealed scores, and evaluations.
 - `hindsight.playedFixtureIds`: List of all completed/locked fixture IDs sent to `getNextFixture()` to guarantee no duplicate fixtures are ever served.
 - `hindsight.activeFixture`: Current uncompleted pre-match fixture, preserving user state across page reloads.
@@ -243,3 +253,39 @@ For hosted deployments, set `DATABASE_URL`, `DATABASE_SCHEMA`, and `DATABASE_SSL
 in the hosting provider's environment settings. The local `.env` file is optional;
 environment variables supplied by the host take precedence. Start the production
 server with `npm start` after building.
+
+## Private statistics
+
+Set a long, unique `STATS_PASSWORD` in the host environment (or the untracked
+local `.env`) and open `/notyourbusiness`. The browser's HTTP Basic prompt accepts
+any username and the configured password. Without a password the page remains
+closed. Use HTTPS in deployment so the password is encrypted in transit.
+Failed password attempts are limited per server process; deployments with multiple
+instances should also enforce a shared authentication rate limit at the proxy.
+
+The browser generates a random ID on its first visit. The server records only
+fixture, lock, reveal, hint and newly earned badge events with the ID, tier,
+fixture ID, timestamp and, for reveals, the match Memory Score. Badge IDs are
+encoded in the event type. No names, email addresses or IP addresses are included.
+Event writes are best effort and do not block play, so totals can be incomplete.
+
+Event rows are deleted after 90 days on startup and every six hours while the
+server is running. Compact per-browser summaries (ID, first and last activity
+day, return flag and game count) and aggregate counters remain indefinitely for
+all-time statistics; they are never displayed individually. The page shows the
+size of the whole database and the statistics tables. Database permissions must
+allow creating tables and indexes in `DATABASE_SCHEMA`. Backups follow the
+database provider's own retention policy.
+
+Days use UTC; this week means the current UTC day and the preceding six days.
+Players are browsers with recorded game activity, games started are served
+fixtures, games finished are reveals, and tier popularity counts served tiers
+(tiers are assigned by the game rather than selected by players). Games per
+player and hints per game use games started. The all-time figures start when
+statistics are enabled, not from previously stored browser history.
+
+Run the local tests with `node --test stats.test.mjs server-env.test.mjs
+src/*.test.ts`. For the PostgreSQL integration test, set
+`STATS_TEST_DATABASE_URL` to an isolated disposable database and run
+`node --test stats.integration.mjs`; the test creates and drops its `stats_test`
+schema.
