@@ -1278,7 +1278,6 @@ export function Matchday({ onHome, drawPreference = readDrawPreference(localStor
               </div>
             </div>
             <div className="next-fixture-box">
-              <a href="/record-book" className="record-book-link">View your Record Book →</a>
               <button
                 className="next-fixture-button"
                 type="button"

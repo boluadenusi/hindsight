@@ -26,6 +26,8 @@ Both modes roll Tier A, B and C with the configured 45/40/15 weights. If the dra
 
 The Record Book at `/record-book` lists completed matches saved in this browser. Filter by club, competition, season, or memory score and sort the results. Older records with missing match details or scores remain visible with those fields marked unavailable; a locked but unrevealed fixture is not listed as completed.
 
+The Stamp Book includes Century Club (100 scored fixtures), Late Show (a correctly picked scorer with a goal in minute 80 or later), North London Derby (the correct result in an Arsenal–Tottenham fixture), Unbeaten Run (five consecutive scores of at least 50%), Continental Tour (five competitions), and Goal Fest (the correct total in a match with at least five goals). Existing history earns these stamps retroactively where the required details are available; a hinted or voided call does not count as a correct prediction.
+
 ---
 
 ## Database Architecture & Schema Inspection

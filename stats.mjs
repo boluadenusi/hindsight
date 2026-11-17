@@ -11,6 +11,9 @@ const badges = {
   'comeback-kid': 'Comeback Kid', 'time-traveller': 'Time Traveller',
   'derby-day': 'Derby Day', 'deep-cut': 'Deep Cut', 'no-hints-needed': 'No Hints Needed',
   'against-the-grain': 'Against the Grain',
+  'century-club': 'Century Club', 'late-show': 'Late Show',
+  'north-london-derby': 'North London Derby', 'unbeaten-run': 'Unbeaten Run',
+  'continental-tour': 'Continental Tour', 'goal-fest': 'Goal Fest',
 };
 const types = new Set(['fixture', 'lock', 'reveal', 'hint', ...Object.keys(badges).map(id => `badge:${id}`)]);
 

@@ -93,6 +93,28 @@ test('event endpoint accepts only compact, validated events', async t => {
   assert.equal((await post({ ...valid, name: 'not collected' })).status, 400);
 });
 
+test('new badge events are accepted and shown on the stats page', async t => {
+  const { url, recorded } = await start(t);
+  const badges = [
+    ['century-club', 'Century Club'], ['late-show', 'Late Show'],
+    ['north-london-derby', 'North London Derby'], ['unbeaten-run', 'Unbeaten Run'],
+    ['continental-tour', 'Continental Tour'], ['goal-fest', 'Goal Fest'],
+  ];
+  for (const [id] of badges) {
+    const response = await fetch(`${url}/api/stats/events`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ type: `badge:${id}`, visitorId, tier: 'A', fixtureId: 123 }),
+    });
+    assert.equal(response.status, 204, id);
+  }
+  assert.equal(recorded.length, badges.length);
+  const response = await fetch(`${url}/notyourbusiness`, {
+    headers: { authorization: `Basic ${Buffer.from('admin:test-password').toString('base64')}` },
+  });
+  const body = await response.text();
+  for (const [, name] of badges) assert.ok(body.includes(name), name);
+});
+
 test('a failed event write does not delay or fail the response', async t => {
   const app = express();
   t.mock.method(console, 'warn', () => {});

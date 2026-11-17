@@ -33,7 +33,13 @@ export type BadgeId =
   | 'derby-day'
   | 'deep-cut'
   | 'no-hints-needed'
-  | 'against-the-grain';
+  | 'against-the-grain'
+  | 'century-club'
+  | 'late-show'
+  | 'north-london-derby'
+  | 'unbeaten-run'
+  | 'continental-tour'
+  | 'goal-fest';
 
 export type BadgeDefinition = {
   id: BadgeId;
@@ -56,14 +62,20 @@ export const BADGES: BadgeDefinition[] = [
   { id: 'first-in-line', name: 'First in Line', group: 'Skill', rule: 'Correctly predict the first team to score and the first player to score.' },
   { id: 'golden-boot-scout', name: 'Golden Boot Scout', group: 'Skill', rule: 'Correctly predict three different scorers in one match.' },
   { id: 'on-the-nose', name: 'On the Nose', group: 'Skill', rule: 'Predict the exact scoreline of a draw.' },
+  { id: 'late-show', name: 'Late Show', group: 'Skill', rule: 'Correctly pick a scorer who scored in the 80th minute or later.' },
+  { id: 'goal-fest', name: 'Goal Fest', group: 'Skill', rule: 'Correctly predict the total goals in a match with five or more goals.' },
   { id: 'hot-hand', name: 'Hot Hand', group: 'Streaks', rule: 'Right result on five fixtures in a row.' },
   { id: 'hat-trick', name: 'Hat-Trick', group: 'Streaks', rule: 'Beat your own average three fixtures in a row.' },
   { id: 'comeback-kid', name: 'Comeback Kid', group: 'Streaks', rule: 'Beat your average right after a below-average fixture.' },
+  { id: 'unbeaten-run', name: 'Unbeaten Run', group: 'Streaks', rule: 'Score at least 50% in five consecutive fixtures.' },
   { id: 'time-traveller', name: 'Time Traveller', group: 'Nostalgia', rule: 'Fixtures from ten different seasons.' },
   { id: 'derby-day', name: 'Derby Day', group: 'Nostalgia', rule: 'Ten fixtures where both teams are big clubs.' },
+  { id: 'north-london-derby', name: 'North London Derby', group: 'Nostalgia', rule: 'Correctly call the result of an Arsenal v Tottenham match.' },
+  { id: 'continental-tour', name: 'Continental Tour', group: 'Nostalgia', rule: 'Complete fixtures from five different competitions.' },
   { id: 'deep-cut', name: 'Deep Cut', group: 'Play style', rule: 'Above your average with neither team a big club.' },
   { id: 'no-hints-needed', name: 'No Hints Needed', group: 'Play style', rule: 'Ten fixtures finished without using a hint.' },
   { id: 'against-the-grain', name: 'Against the Grain', group: 'Play style', rule: 'Right result where the weaker side won.' },
+  { id: 'century-club', name: 'Century Club', group: 'Play style', rule: 'Complete 100 scored fixtures.' },
 ];
 
 export const BADGE_GROUPS: BadgeGroup[] = ['Skill', 'Streaks', 'Nostalgia', 'Play style'];
@@ -110,6 +122,9 @@ export type BadgeHistoryItem = {
     game_date?: string;
     tier?: 'A' | 'B' | 'C';
     season_year?: number | null;
+    home_team?: string;
+    away_team?: string;
+    competition?: string;
     homeIsBigClub?: boolean;
     awayIsBigClub?: boolean;
     home_subs?: Array<{ id: number }>;
@@ -118,7 +133,7 @@ export type BadgeHistoryItem = {
   result?: {
     homeGoals: number;
     awayGoals: number;
-    goals: Array<{ playerId: number | null; team: 'home' | 'away'; ownGoal?: boolean }>;
+    goals: Array<{ playerId: number | null; team: 'home' | 'away'; minute?: number | null; ownGoal?: boolean }>;
   } | null;
 evaluation?: {
     percentage?: number;
@@ -195,6 +210,30 @@ function weakerSideWon(item: BadgeHistoryItem): boolean {
   return winner === weaker;
 }
 
+function addNewMatchBadges(item: BadgeHistoryItem, earned: Set<BadgeId>): void {
+  const evaluation = item.evaluation;
+  if (!evaluation) return;
+  const matchedScorers = new Set(
+    (evaluation.goalscorerPoints || []).filter((pick) => pick.matched > 0).map((pick) => pick.playerId),
+  );
+  if (item.result?.goals?.some((goal) =>
+    !goal.ownGoal && goal.playerId !== null && matchedScorers.has(goal.playerId)
+    && typeof goal.minute === 'number' && goal.minute >= 80
+  )) earned.add('late-show');
+
+  const home = item.fixtureSnapshot?.home_team?.trim().toLowerCase();
+  const away = item.fixtureSnapshot?.away_team?.trim().toLowerCase();
+  const isArsenal = (name: string | undefined) => name === 'arsenal fc' || name === 'arsenal';
+  const isTottenham = (name: string | undefined) => name === 'tottenham hotspur' || name === 'tottenham';
+  if (evaluation.correctResult && ((isArsenal(home) && isTottenham(away)) || (isTottenham(home) && isArsenal(away)))) {
+    earned.add('north-london-derby');
+  }
+  if (item.result && item.result.homeGoals + item.result.awayGoals >= 5
+    && evaluation.calls?.some((call) => call.id === 'totalGoals' && call.status === 'earned')) {
+    earned.add('goal-fest');
+  }
+}
+
 export function evaluateEarnedBadges(history: BadgeHistoryItem[]): BadgeId[] {
   const items = (Array.isArray(history) ? history : []).filter(
     (item): item is BadgeHistoryItem =>
@@ -202,9 +241,11 @@ export function evaluateEarnedBadges(history: BadgeHistoryItem[]): BadgeId[] {
   );
   const performance = sequencePerformance(items);
   const earned = new Set<BadgeId>();
+  if (items.length >= 100) earned.add('century-club');
 
   // --- Skill: per-fixture reads ---
   for (const item of items) {
+    addNewMatchBadges(item, earned);
     const evaluation = item.evaluation!;
     const picks = evaluation.goalscorerPoints || [];
     const firstGoalscorerDetail = evaluation.firstGoalscorerDetail;
@@ -265,10 +306,13 @@ export function evaluateEarnedBadges(history: BadgeHistoryItem[]): BadgeId[] {
   // --- Streaks & runs ---
   let resultRun = 0;
   let aboveRun = 0;
+  let unbeatenRun = 0;
   let hintFreeFinishes = 0;
   items.forEach((item, index) => {
     resultRun = item.evaluation!.correctResult ? resultRun + 1 : 0;
     if (resultRun >= 5) earned.add('hot-hand');
+    unbeatenRun = item.evaluation!.percentage! >= 50 ? unbeatenRun + 1 : 0;
+    if (unbeatenRun >= 5) earned.add('unbeaten-run');
 
     aboveRun = performance[index] === 'above' ? aboveRun + 1 : 0;
     if (aboveRun >= 3) earned.add('hat-trick');
@@ -283,13 +327,17 @@ export function evaluateEarnedBadges(history: BadgeHistoryItem[]): BadgeId[] {
 
   // --- Nostalgia: archive spread ---
   const seasons = new Set<string>();
+  const competitions = new Set<string>();
   let bothBigClubs = 0;
   for (const item of items) {
     const key = seasonKey(item);
     if (key) seasons.add(key);
+    const competition = item.fixtureSnapshot?.competition?.trim().toLowerCase();
+    if (competition) competitions.add(competition);
     if (item.fixtureSnapshot?.tier === 'A') bothBigClubs += 1;
   }
   if (seasons.size >= 10) earned.add('time-traveller');
+  if (competitions.size >= 5) earned.add('continental-tour');
   if (bothBigClubs >= 10) earned.add('derby-day');
 
   // --- Play style ---
@@ -314,6 +362,7 @@ export function badgesForItem(item: BadgeHistoryItem): BadgeId[] {
   const picks = evaluation.goalscorerPoints || [];
   const firstGoalscorerDetail = evaluation.firstGoalscorerDetail;
   const earned = new Set<BadgeId>();
+  addNewMatchBadges(item, earned);
 
   if (evaluation.exactScoreline) earned.add('bullseye');
   if (evaluation.exactScoreline && evaluation.correctResult
